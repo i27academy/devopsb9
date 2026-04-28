@@ -1,0 +1,35 @@
+# This particular playbook is used to install java and jenkins on a vm
+---
+- hosts: all
+  become: true 
+  tasks:
+  - name: Install java
+    ansible.builtin.apt:
+      name: openjdk-21-jre
+      update_cache: yes # 3600 
+  - name: Add Jenkins Key
+    ansible.builtin.apt_key:
+      url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+      state: present
+  - name: Add Jenkins Repo
+    ansible.builtin.apt_repository:
+      repo: 'deb https://pkg.jenkins.io/debian-stable binary/'
+      state: present
+  - name: Install Jenkins
+    apt:
+      name: jenkins
+      state: present 
+  - name: Start Jenkins
+    ansible.builtin.service:
+      name: jenkins 
+      state: started
+  - name: Enable Jenkins service 
+    ansible.builtin.service:
+      name: jenkins 
+      enabled: true
+  - name: View the initial admin password for jenkins 
+    shell: cat /var/lib/jenkins/secrets/initialAdminPassword
+    register: initial_admin_password     
+  - name: Display the content in the initial admin password 
+    debug: 
+      var: initial_admin_password.stdout_lines

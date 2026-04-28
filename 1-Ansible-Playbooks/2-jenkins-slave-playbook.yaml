@@ -1,0 +1,157 @@
+############################################################
+# Jenkins Slave Configuration Playbook
+#
+# This Playbook Performs Following Tasks:
+#
+# 1. Update Ubuntu Repository
+# 2. Install Required Packages using Loop
+#      - Java (JDK 17) → Jenkins Master-Slave Communication
+#      - Git → Source Code Checkout
+#      - Curl/Wget → Downloads
+#      - Docker → Image Build
+#      - Unzip/Tar → Package Extraction
+#
+# 3. Create Jenkins Working Directory
+# 4. Download and Configure Maven
+# 5. Create Global Symlink for mvn Command
+# 6. Configure Java Environment Variables
+# 7. Enable Docker Service
+# 8. Add User to Docker Group
+# 9. Download and Configure Kubectl
+# 10. Verify Installation (Java, Maven, Docker, Kubectl)
+#
+############################################################
+
+---
+- name: Configure Jenkins Slave Node
+  hosts: all
+  become: true
+  vars:
+    user_name: ansible
+    maven_version: "3.8.8"
+    maven_download_url: "https://archive.apache.org/dist/maven/maven-3/3.8.8/binaries/apache-maven-3.8.8-bin.tar.gz"
+    maven_install_dir: "/opt"
+    maven_home: "/opt/apache-maven-3.8.8"
+    kubectl_version: "v1.29.0"
+  tasks:
+    - name: Update ubuntu repository
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop: # for loop
+        - openjdk-17-jdk
+        - git
+        - curl
+        - wget
+        - tar
+        - unzip
+        - docker.io
+    - name: Create Jenkins working directory
+      file:
+        path: /home/{{ user_name }}/jenkins
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: '0755'
+
+    - name: Download Maven package
+      get_url:
+        url: "{{ maven_download_url }}"
+        dest: "{{ maven_install_dir }}/apache-maven-{{ maven_version }}-bin.tar.gz"
+        mode: '0644'
+
+    - name: Extract Maven package
+      unarchive:
+        src: "{{ maven_install_dir }}/apache-maven-{{ maven_version }}-bin.tar.gz"
+        dest: "{{ maven_install_dir }}/"
+        remote_src: yes
+        creates: "{{ maven_home }}"
+
+    - name: Configure Maven environment variables
+      copy:
+        dest: /etc/profile.d/maven.sh
+        mode: '0755'
+        content: |
+          export MAVEN_HOME={{ maven_home }}
+          export M2_HOME={{ maven_home }}
+          export PATH=$PATH:{{ maven_home }}/bin
+
+    - name: Create symlink for mvn command
+      file:
+        src: "{{ maven_home }}/bin/mvn"
+        dest: /usr/local/bin/mvn
+        state: link
+        force: yes
+
+    - name: Configure Java environment variables
+      copy:
+        dest: /etc/profile.d/java.sh
+        mode: '0755'
+        content: |
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          export PATH=$PATH:/usr/lib/jvm/java-17-openjdk-amd64/bin
+
+    - name: Enable and start Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ansible user to docker group
+      user:
+        name: "{{ user_name }}"
+        groups: docker
+        append: yes
+
+    - name: Download kubectl
+      get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+
+    - name: Verify Java version
+      shell: |
+        source /etc/profile.d/java.sh
+        java -version
+      args:
+        executable: /bin/bash
+      register: java_version
+      changed_when: false
+
+    - name: Verify Maven version
+      command: mvn --version
+      register: maven_version_output
+      changed_when: false
+
+    - name: Verify Docker version
+      command: docker --version
+      register: docker_version_output
+      changed_when: false
+
+    - name: Verify kubectl version
+      command: kubectl version --client
+      register: kubectl_version_output
+      changed_when: false
+
+    - name: Show Java version
+      debug:
+        var: java_version.stderr_lines
+
+    - name: Show Maven version
+      debug:
+        var: maven_version_output.stdout_lines
+
+    - name: Show Docker version
+      debug:
+        var: docker_version_output.stdout_lines
+
+    - name: Show kubectl version
+      debug:
+        var: kubectl_version_output.stdout_lines
+
+
