@@ -1,1 +1,100 @@
-## needs to be updated
+---
+- name: Install and configure SonarQube on Ubuntu
+  hosts: sonar
+  become: yes
+  vars:
+    sonarqube_version: "10.4.1.88267"
+
+  tasks:
+    - name: Ensure max_map_count is set correctly
+      sysctl:
+        name: vm.max_map_count
+        value: '262144'
+        state: present
+        reload: yes
+
+    - name: Ensure fs.file-max is set correctly
+      sysctl:
+        name: fs.file-max
+        value: '131072'
+        state: present
+        reload: yes
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required dependencies
+      apt:
+        name:
+          - openjdk-17-jdk
+          - acl
+          - unzip
+          - wget
+        state: present
+
+    # SonarQube Setup
+    - name: Create sonar user
+      user:
+        name: sonar
+        system: yes
+        home: /home/sonar
+        create_home: yes
+        shell: /bin/bash
+
+    - name: Download SonarQube
+      get_url:
+        url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-{{ sonarqube_version }}.zip"
+        dest: /tmp/sonarqube.zip
+
+    - name: Extract SonarQube
+      unarchive:
+        src: /tmp/sonarqube.zip
+        dest: /opt/
+        remote_src: yes
+        owner: sonar
+        group: sonar
+        creates: "/opt/sonarqube-{{ sonarqube_version }}/bin"
+
+    - name: Create symbolic link to /opt/sonarqube
+      file:
+        src: "/opt/sonarqube-{{ sonarqube_version }}"
+        dest: /opt/sonarqube
+        state: link
+        owner: sonar
+        group: sonar
+        force: yes
+
+    - name: Create SonarQube systemd service file
+      copy:
+        dest: /etc/systemd/system/sonarqube.service
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=syslog.target network.target
+
+          [Service]
+          Type=forking
+          ExecStart=/opt/sonarqube/bin/linux-x86-64/sonar.sh start
+          ExecStop=/opt/sonarqube/bin/linux-x86-64/sonar.sh stop
+          User=sonar
+          Group=sonar
+          Restart=always
+          LimitNOFILE=65536
+          LimitNPROC=4096
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start SonarQube service
+      service:
+        name: sonarqube
+        state: started
+        enabled: yes
