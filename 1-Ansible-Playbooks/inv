@@ -1,0 +1,11 @@
+[jenkins]
+jenkins-slave ansible_host=private-ip ansible_user=ansible
+
+[docker]
+docker-slave ansible_host=private-ip ansible_user=ansible
+
+[sonar]
+sonar ansible_host=private-ip ansible_user=ansible
+
+[all:vars]
+ansible_ssh_private_key_file=~/.ssh/id_rsa
